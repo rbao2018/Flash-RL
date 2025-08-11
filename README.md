@@ -37,26 +37,26 @@ pip install flash-llm-rl # need to be installed in all nodes in multi-node train
 FlashRL is implemented as a plug-in-and-play manner, using [environment variables](#patcher) `FLASHRL_CONFIG` to control the quantization precision.
 
 ```bash 
-# for multi-node jobs via `ray submit`
-echo "  FLASHRL_CONFIG: 'fp8'" | tee -a verl/trainer/runtime_env.yaml
-bash verl/recipe/dapo/run_dapo_qwen2.5_32b.sh # this can be any scripts
+# for single-node job
+export FLASHRL_CONFIG=fp8
+bash verl/examples/ppo_trainer/run_qwen2.5-32b.sh
 
-# alternatively, for single-node job, fp8 online quantization will be turned on via
-# >  export FLASHRL_CONFIG=fp8
-# >  bash verl/examples/ppo_trainer/run_qwen2.5-32b.sh
+# alternatively, for multi-node jobs via `ray submit`, fp8 online quantization will be turned on via
+# > echo "  FLASHRL_CONFIG: 'fp8'" | tee -a verl/trainer/runtime_env.yaml # add `FLASHRL_CONFIG: 'fp8'` to runtime env
+# > bash verl/recipe/dapo/run_dapo_qwen2.5_32b.sh # this can be any scripts
 ```
 
 ### RL Logprob Patch Only
 Setting the config to `bf16` to extract precise logprob used in sampling without rollout quantization. This is useful for applying the [Truncated Importance Sampling](https://fengyao.notion.site/off-policy-rl?source=copy_link). 
 
 ```bash 
-# for multi-node jobs via `ray submit`
-echo "  FLASHRL_CONFIG: 'bf16'" | tee -a verl/trainer/runtime_env.yaml
-bash verl/recipe/dapo/run_dapo_qwen2.5_32b.sh # this can be any scripts
+#  for single-node job
+export FLASHRL_CONFIG=bf16
+bash verl/examples/ppo_trainer/run_qwen2.5-32b.sh
 
-# alternatively, for single-node job, RL Logprob Patch Only will be turned on via
-# >  export FLASHRL_CONFIG=bf16
-# >  bash verl/examples/ppo_trainer/run_qwen2.5-32b.sh
+# alternatively, for multi-node jobs via `ray submit`, RL Logprob Patch Only will be turned on via
+# > echo "  FLASHRL_CONFIG: 'bf16'" | tee -a verl/trainer/runtime_env.yaml # add `FLASHRL_CONFIG: 'fp8'` to runtime env
+# > bash verl/recipe/dapo/run_dapo_qwen2.5_32b.sh # this can be any scripts
 ```
 
 ## Usage Guide
