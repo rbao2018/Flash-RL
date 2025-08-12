@@ -106,6 +106,8 @@ def patch_vllm_process_weights_after_loading():
                     layer.k_scale = -1.0
                 if not hasattr(layer, 'v_scale'):
                     layer.v_scale = -1.0
+                if not hasattr(layer, 'q_scale'):
+                    layer.q_scale = -1.0
                 return original_kvcache_process_weights_after_loading(self, layer)
             BaseKVCacheMethod.process_weights_after_loading = hacked_kvcache_process_weights_after_loading
             
