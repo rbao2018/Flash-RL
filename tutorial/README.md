@@ -47,7 +47,7 @@ The patched `load_weights` function follows a four-step process:
 3. **Fresh Load**: Execute the weight loader as if loading weights for the first time
 4. **Restore and Update**: Recover tensors to the `Record2` state and apply parameter updates using `copy_()`
 
-## Background: Why Cant We Just Load the Weights?
+## Background: Why Can't We Just Load the Weights?
 
 ### Specialized Optimization Requirements
 
