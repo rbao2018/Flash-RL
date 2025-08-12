@@ -141,4 +141,4 @@ If you find our work useful, please cite us:
 
 ## Questions?
 
-If you have any questions related to the code or the blog, feel free to reach out to us at [Liyuan Liu](llychinalz@gmail.com)
+If you have any questions related to the code or the blog, feel free to reach out to us at [Liyuan Liu](llychinalz@gmail.com) and [Feng Yao](fengyao@ucsd.edu).
