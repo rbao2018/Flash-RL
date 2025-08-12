@@ -47,7 +47,7 @@ The patched `load_weights` function follows a four-step process:
 3. **Fresh Load**: Execute the weight loader as if loading weights for the first time
 4. **Restore and Update**: Recover tensors to the `Record2` state and apply parameter updates using `copy_()`
 
-## Why Quantized Models Complicate Parameter Updates
+## Background: Why Cant We Just Load the Weights?
 
 ### Specialized Optimization Requirements
 
@@ -57,12 +57,12 @@ Quantized models employ specialized optimization techniques that significantly i
 - **Tensor Recreation**: vLLM creates entirely new weight tensors during processing, losing critical metadata about the original loading process
 - **Memory Location Constraints**: Optimized CUDA functions often require input and output tensors to occupy the same memory locations for maximum throughput
 
-### The Core Challenge
+### The Requirements
 
 When updating parameters in quantized models, we must:
 - Correctly compute the updated parameter values
 - Preserve the updated values in their **original memory locations**
-- Maintain all necessary tensor properties for proper model operation
+- Maintain all necessary tensor properties for proper weight loading
 
 ## Debugging and Troubleshooting
 
