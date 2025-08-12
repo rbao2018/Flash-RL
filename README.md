@@ -130,8 +130,8 @@ If you find our work useful, please cite us:
   month = aug,
 }
 @misc{yao2025flashrl,
-  title = {Flash-RL: Fast RL training with Quantized Rollouts},
-  url = {https://fengyao.notion.site/flash-rl,
+  title = {FlashRL: 8Bit Rollouts, Full Power RL},
+  url = {https://fengyao.notion.site/flash-rl},
   author = {Liu, Liyuan and Yao, Feng and Zhang, Dinghuai and Dong, Chengyu and Shang, Jingbo and Gao, Jianfeng},
   journal = {Feng Yao's Notion},
   year = {2025},
