@@ -38,7 +38,7 @@ FlashRL patches two key components of `vllm.LLM`:
 
 During model initialization, FlashRL records all properties of weight tensors **before** loading any weights. This initial state recording (referred to as `Record1`) happens only once and serves as the baseline state.
 
-### 2. Weight Loading (`load_weights` function)
+### 2. Weight Loading (`load_weights()` function)
 
 The patched `load_weights` function follows a four-step process:
 
