@@ -1,6 +1,6 @@
 # ⚡ How FlashRL Works ⚡
 
-This document explains the high-level architecture and implementation details of `FlashRL`, a framework for accelerating reinforcement learning with quantization.
+This document explains the high-level architecture and implementation details of `FlashRL`, a framework for accelerating reinforcement learning with quantized rollout.
 
 ## Background: Modern RL Frameworks and the vLLM Challenge
 
@@ -25,8 +25,8 @@ flowchart TD
 
 To accelerate RL with quantization, we need both:
 
-1. **Proper rollout generation** by the inference engine ✅ *Already supported in modern inference engines*
-2. **Parameter update synchronization** with the inference engine ❌ *Not currently supported in modern inference engines*
+1. **Proper rollout generation** using quantized model served by the inference engine ✅ *Already supported in modern inference engines*
+2. **Parameter update synchronization** of the quantized model with the inference engine ❌ *Not currently supported in modern inference engines*
 
 This gap necessitates patching the inference engine (vLLM) to handle parameter updates correctly in quantized models.
 
