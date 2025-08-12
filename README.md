@@ -31,7 +31,7 @@
 pip install flash-llm-rl # need to be installed in all nodes in multi-node training
 ```
 
-(Optional) there are two options to verify the FlashRL install: 1) set `FLASHRL_LOGGING_LEVEL` to `DEBUG` and compare the log with the [provided ones](#examples); 2) for more details / debugging, please follow the [Tutorial](tutorial.md). 
+(Optional) there are two options to verify the FlashRL install: 1) set `FLASHRL_LOGGING_LEVEL` to `DEBUG` and compare the log with the [provided ones](#examples); 2) for more details / debugging, please follow the [Tutorial](/tutorial/README.md). 
 
 ### Rollout Generation w. FP8 Quantization
 FlashRL is implemented as a plug-in-and-play manner, using [environment variables](#patcher) `FLASHRL_CONFIG` to control the quantization precision.
@@ -97,7 +97,7 @@ Patcher would check the environment variable and operates accordingly. Please fi
 | `FLASHRL_LMHEAD_FP32` | if set to `1`, forcing `vLLM` conducting `lm head` compute in `bf16`
 | `FLASHRL_LOGGING_LEVEL` | set to `DEBUG` to turn on verbose logging for FlashRL functions |
 | `FLASHRL_LOGGING_FILE` | if set, will save the log to files as well | 
-| `FLASHRL_TEST_RELOAD` | functionality provided to test FlashRL install, check [TODO: add link to tutorial] for more details |
+| `FLASHRL_TEST_RELOAD` | functionality provided to test FlashRL install, check [this guide](./tutorial/verify_flashrl_install.md) for more details |
 
 ## Examples
 
