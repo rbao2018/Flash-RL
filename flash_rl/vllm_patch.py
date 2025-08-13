@@ -519,6 +519,8 @@ def patch_vllm_llm():
                             flash_quantize_fn(weights, self.flash_rl_profile)
                         )
                         
+                        del weights
+                        
                         if hasattr(model, 'hacked_model_config') and hasattr(model, 'hacked_target_device'):        
                             from vllm.model_executor.model_loader import loader
                             loader._process_weights_after_loading(model, None, None)
