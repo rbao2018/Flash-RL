@@ -40,6 +40,9 @@ requirements = [
 
 setup_flashrl_env()
 
+
+        # 'vllm.general_plugins': ['flashrl=flash_rl:patch']
+
 setup(
     name='flash_llm_rl',
     version='1.0.0',

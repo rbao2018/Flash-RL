@@ -33,66 +33,92 @@ recorded_loader_keys = [
     'input_dim',
     '_assert_and_load',
 ]
-def patch_vllm_process_weights_after_loading():
-    try:
-        # Store the original process_weights_after_loading function
-        from vllm.model_executor.model_loader import loader
-        
-        if not hasattr(loader, 'beforeflashrl_process_weights_after_loading'):
-            
-            original_process_weights_after_loading = loader._process_weights_after_loading
-            loader.beforeflashrl_process_weights_after_loading = original_process_weights_after_loading
-            
-            def hacked_process_weights_after_loading(
-                model, 
-                model_config, 
-                target_device, 
-            ) -> None:
-                if model_config is None and target_device is None:
-                    model_config = getattr(model, 'hacked_model_config', None)
-                    target_device = getattr(model, 'hacked_target_device', None)
+
+def hacked_process_weights_after_loading(
+    original_process_weights_after_loading,
+    model, 
+    model_config, 
+    target_device, 
+) -> None:
+    print("Patched process_weights_after_loading function called!!!!!!")
+    if model_config is None and target_device is None:
+        model_config = getattr(model, 'hacked_model_config', None)
+        target_device = getattr(model, 'hacked_target_device', None)
+    else:
+        setattr(model, 'hacked_model_config', model_config)
+        setattr(model, 'hacked_target_device', target_device)
+
+    if getattr(model, 'hacked_not_need_process_weights_after_loading', False):
+        logger.debug("vllm process_weights_after_loading already processed")
+        return
+
+    original_weights = dict(model.named_parameters())
+    
+    # this can be optimized for better memory usage, leave for future work...
+    if not hasattr(model, 'hacked_original_weights_rebuild_keys'):
+        model.hacked_original_weights_rebuild_keys = {}
+        for name, p in original_weights.items():
+            model.hacked_original_weights_rebuild_keys[name] = (p.shape, p.stride(), p.dtype, p.untyped_storage().nbytes())
+    
+    # record weight_loader 
+    recorded_loader = {k: dict() for k in recorded_loader_keys}
+    for name, p in original_weights.items():
+        for k in recorded_loader.keys():
+            if hasattr(p, k):
+                attr = getattr(p, k)
+                if not callable(attr):
+                    recorded_loader[k][name] = attr
+                elif p is attr.__self__:
+                    recorded_loader[k][name] = attr.__func__
                 else:
-                    setattr(model, 'hacked_model_config', model_config)
-                    setattr(model, 'hacked_target_device', target_device)
+                    recorded_loader[k][name] = attr
+    
+    original_process_weights_after_loading(model, model_config, target_device)
             
-                if getattr(model, 'hacked_not_need_process_weights_after_loading', False):
-                    logger.debug("vllm process_weights_after_loading already processed")
-                    return
+    model.hacked_recorded_loader = recorded_loader
+    
+def patch_vllm_process_weights_after_loading():
+    try:        
+        succeeded_process_weights_after_loading = False
 
-                # print("Patched process_weights_after_loading function called")
-                
-                original_weights = dict(model.named_parameters())
-                
-                # this can be optimized for better memory usage, leave for future work...
-                if not hasattr(model, 'hacked_original_weights_rebuild_keys'):
-                    model.hacked_original_weights_rebuild_keys = {}
-                    for name, p in original_weights.items():
-                        model.hacked_original_weights_rebuild_keys[name] = (p.shape, p.stride(), p.dtype, p.untyped_storage().nbytes())
-                
-                # record weight_loader 
-                recorded_loader = {k: dict() for k in recorded_loader_keys}
-                for name, p in original_weights.items():
-                    for k in recorded_loader.keys():
-                        if hasattr(p, k):
-                            attr = getattr(p, k)
-                            if not callable(attr):
-                                recorded_loader[k][name] = attr
-                            elif p is attr.__self__:
-                                recorded_loader[k][name] = attr.__func__
-                            else:
-                                recorded_loader[k][name] = attr
-                
-                original_process_weights_after_loading(model, model_config, target_device)
-                        
-                model.hacked_recorded_loader = recorded_loader
+        # Store the original process_weights_after_loading function
+        try: 
+            from vllm.model_executor.model_loader import loader
+            if not hasattr(loader, 'beforeflashrl_process_weights_after_loading'):
 
-            # Patch the process_weights_after_loading function
-            loader._process_weights_after_loading = hacked_process_weights_after_loading
-            
-            logger.debug("Successfully patched the process_weights_after_loading function of vllm")
-        else:
-            logger.debug("vllm process_weights_after_loading already patched")
+                original_process_weights_after_loading = loader._process_weights_after_loading
+                loader.beforeflashrl_process_weights_after_loading = original_process_weights_after_loading
+                
+                from functools import partial
+                loader._process_weights_after_loading = partial(hacked_process_weights_after_loading, original_process_weights_after_loading)
+
+                logger.debug("Successfully patched the process_weights_after_loading function of vllm")
+                succeeded_process_weights_after_loading = True
+            else:
+                logger.debug("vllm process_weights_after_loading already patched")
+        except ImportError:
+            pass 
         
+        if not succeeded_process_weights_after_loading:    
+            try:
+                from vllm.model_executor.model_loader import utils
+                
+                if not hasattr(utils, 'beforeflashrl_process_weights_after_loading'):
+
+                    original_process_weights_after_loading = utils.process_weights_after_loading
+                    utils.beforeflashrl_process_weights_after_loading = original_process_weights_after_loading
+
+                    from functools import partial
+                    utils.process_weights_after_loading = partial(hacked_process_weights_after_loading, original_process_weights_after_loading)
+
+                    logger.debug("Successfully patched the process_weights_after_loading function of vllm")
+                else:
+                    logger.debug("vllm process_weights_after_loading already patched")
+            
+            except ImportError as e:
+                if not succeeded_process_weights_after_loading:
+                    raise e 
+                
         from vllm.model_executor.layers.quantization.kv_cache import BaseKVCacheMethod
         if not hasattr(BaseKVCacheMethod, 'beforeflashrl_process_weights_after_loading'):
             original_kvcache_process_weights_after_loading = BaseKVCacheMethod.process_weights_after_loading
@@ -455,8 +481,12 @@ def patch_vllm_llm():
                     def hacked_load_weights(
                         weights,
                     ):
-                        # print("flash_rl quant load_weights is called")
                         setattr(model, 'hacked_not_need_process_weights_after_loading', False)
+                        
+                        if not hasattr(model, "hacked_original_weights_rebuild_keys"):
+                            return original_load_weights(flash_quantize_fn(weights, self.flash_rl_profile))
+                        
+                        # print("flash_rl quant load_weights is called")
                         
                         if len(self.flash_rl_module_attribute_to_preserve) > 0:
                             for _, module in model.named_modules():
@@ -471,8 +501,6 @@ def patch_vllm_llm():
                         for name, p in existing_params.items():
                             hacked_data_dict[name] = p.data
                         
-                        assert hasattr(model, "hacked_original_weights_rebuild_keys")
-                        
                         for name, (shape, stride, dtype, nbytes) in model.hacked_original_weights_rebuild_keys.items():
                             if name in existing_params:
                                 existing_params[name].data = torch.empty(shape, dtype=dtype) 
@@ -486,9 +514,16 @@ def patch_vllm_llm():
                             flash_quantize_fn(weights, self.flash_rl_profile)
                         )
                         
-                        if hasattr(model, 'hacked_model_config') and hasattr(model, 'hacked_target_device'):        
-                            from vllm.model_executor.model_loader import loader
-                            loader._process_weights_after_loading(model, None, None)
+                        if hasattr(model, 'hacked_model_config') and hasattr(model, 'hacked_target_device'):
+                            
+                            process_weights_after_loading_name = '_process_weights_after_loading'
+                            try: 
+                                from vllm.model_executor.model_loader import loader
+                            except ImportError:
+                                from vllm.model_executor.model_loader import utils as loader
+                                process_weights_after_loading_name = 'process_weights_after_loading'
+                                    
+                            getattr(loader, process_weights_after_loading_name)(model, None, None)
                             setattr(model, 'hacked_not_need_process_weights_after_loading', True)
                         else:
                             setattr(model, 'hacked_not_need_process_weights_after_loading', False)
