@@ -82,6 +82,10 @@ def patch_vllm_process_weights_after_loading():
                             else:
                                 recorded_loader[k][name] = attr
                 
+                del original_weights
+                gc.collect()
+                torch.cuda.empty_cache()
+                
                 original_process_weights_after_loading(model, model_config, target_device)
                         
                 model.hacked_recorded_loader = recorded_loader
@@ -120,6 +124,33 @@ def patch_vllm_process_weights_after_loading():
     except Exception as e:
         logger.debug(f"Error patching vllm process_weights_after_loading: {e}")
         return False
+
+def patch_vllm_fp8_create_weight():
+    try: 
+        from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
+        if not hasattr(Fp8LinearMethod, 'beforeflashrl_create_weights'):
+            original_create_weight = Fp8LinearMethod.create_weights
+            Fp8LinearMethod.beforeflashrl_create_weights = original_create_weight
+            from .fp8loader import disable_mem_pool
+            
+            def hacked_create_weights(
+                self,
+                *args,
+                **kwargs,
+            ) -> None:
+                with disable_mem_pool():
+                    original_return = original_create_weight(self, *args, **kwargs)
+                return original_return
+
+            Fp8LinearMethod.create_weights = hacked_create_weights
+            logger.debug("Successfully patched vllm Fp8LinearMethod create_weights")
+        else:
+            logger.debug("vllm Fp8LinearMethod create_weights already patched")
+    except Exception as e:
+        logger.debug(f"Error patching vllm Fp8LinearMethod create_weights: {e}")
+        return False
+
+    return True
 
 def patch_vllm_lmhead_to_fp32():
     try:
@@ -482,6 +513,8 @@ def patch_vllm_llm():
                                 if not hasattr(existing_params[n], k):
                                     setattr(existing_params[n], k, bond_method_to_cls(loader, existing_params[n]))
 
+                        del existing_params
+                        
                         updated_params = original_load_weights(
                             flash_quantize_fn(weights, self.flash_rl_profile)
                         )
@@ -512,7 +545,6 @@ def patch_vllm_llm():
                         logger.debug(f"flash_rl load_weights skipped params (not accurate for `fp8-vllm`): {skipped_params}")
                         del skipped_params
                         del hacked_data_dict
-                        del existing_params
                         gc.collect()
                         torch.cuda.empty_cache()
                         

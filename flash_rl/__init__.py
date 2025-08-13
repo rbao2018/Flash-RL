@@ -42,7 +42,7 @@ def check_dist_initialized():
 # Check if patching is needed based on environment variables
 if 'FLASHRL_CONFIG' in os.environ and check_vllm_installed():
     
-    from .vllm_patch import patch_vllm_llm, patch_vllm_process_weights_after_loading, patch_vllm_logprob_compute
+    from .vllm_patch import patch_vllm_llm, patch_vllm_process_weights_after_loading, patch_vllm_fp8_create_weight 
 
     # Patch the process_weights_after_loading function
     process_weights_status = patch_vllm_process_weights_after_loading()
@@ -52,6 +52,9 @@ if 'FLASHRL_CONFIG' in os.environ and check_vllm_installed():
     patch_status = patch_vllm_llm()
     logger.debug(f"Patching the vllm LLM to enable flash_rl quantization... status: {patch_status}")
     
+    patch_vllm_fp8_create_weight_status = patch_vllm_fp8_create_weight()
+    logger.debug(f"Patching the vllm fp8 linear... status: {patch_vllm_fp8_create_weight_status}")
+
     if 'FLASHRL_TEST_RELOAD' in os.environ:
         from .vllm_patch import patch_vllm_llm_test_reload
         reload_status = patch_vllm_llm_test_reload()
