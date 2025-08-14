@@ -83,7 +83,6 @@ def patch_vllm_process_weights_after_loading():
                                 recorded_loader[k][name] = attr
                 
                 del original_weights
-                gc.collect()
                 torch.cuda.empty_cache()
                 
                 original_process_weights_after_loading(model, model_config, target_device)
