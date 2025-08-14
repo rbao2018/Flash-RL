@@ -108,6 +108,16 @@ Patcher would check the environment variable and operates accordingly. Please fi
 | FP8 Rollout for Qwen2.5-0.5B-Instruct on DAPO | [Script](https://github.com/yaof20/verl/blob/flash-rl/recipe/flash_rl/gsm8k_qwen0_5b_fp8.sh) | `bash recipe/flash_rl/gsm8k_qwen0_5b_fp8.sh flash-fp8-TIS-2 2` | [Wandb](https://wandb.ai/llychinalz/Flash-GSM8K?nw=cih3nmuhn8p) [Log](https://github.com/yaof20/verl/blob/flash-rl/recipe/flash_rl/logs/gsm8k_fp8.log) |
 | FP8 Rollout for Qwen2.5-32B-Instruct on DAPO | [Script](https://github.com/yaof20/verl/blob/flash-rl/recipe/flash_rl/dapo_qwen32b_int8.sh) | `bash recipe/flash_rl/dapo_qwen32b_fp8.sh flash-fp8-TIS-8 8`| IN Progress |
 
+## Tested Environments
+
+Below are the combinations of the environments that we have tested on.
+
+| Image | CUDA | Ray | vLLM | GSM8K INT8 example |
+|--|--|--|--|--|
+| `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.3-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.3 | ✅ Tested |
+| `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.4-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.4 | ✅ Tested |
+| `hiyouga/verl:ngc-th2.7.0-cu12.6-vllm0.9.1` | 12.6 | 2.47.0 | 0.9.1 | ❌ failed |
+
 ## 🚧 Roadmap & Future Improvements
 
 We're working on several improvements to Flash-RL:
