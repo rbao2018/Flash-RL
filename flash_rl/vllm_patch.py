@@ -4,6 +4,7 @@ import vllm
 import torch 
 import types
 import gc
+from packaging.version import parse
 
 from .flash_quantization import get_quantize_fn
 
@@ -406,6 +407,12 @@ def patch_vllm_llm():
                             kwargs[key] = config_data.get(key)
                     model = config_data.get('model', model)
                     if config_data.get('fn', 'int8') != 'bf16':
+                        
+                        assert parse(vllm.__version__) <= parse('0.8.4'), (
+                            f'detected vLLM version {vllm.__version__}'
+                            'for vLLM > 0.8.4, `FlashRL` only supports `bf16` patches'
+                            'for exact logprob compute'
+                        )
                         
                         if config_data.get('fn', 'int8') == 'fp8_vllm':
                             if 'profile' in config_data:
