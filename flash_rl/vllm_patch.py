@@ -414,7 +414,7 @@ def patch_vllm_llm():
                             'for exact logprob compute'
                         )
                         
-                        if config_data.get('fn', 'int8') == 'fp8_vllm':
+                        if config_data.get('fn', 'int8') in ['fp8_vllm', 'fp8']:
                             if 'profile' in config_data:
                                 logger.warning(f"flash_rl fp8_vllm profile is not needed, but set as {config_data['profile']}")
                             self.flash_rl_profile = None
