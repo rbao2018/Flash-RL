@@ -78,9 +78,27 @@ torchrun --standalone --nnodes=1 --nproc-per-node=1 --no-python lm_eval --model 
 
 ## Interpreting Results
 
-### Success Indicators
 - **Performance ~0.36**: FlashRL patches are working correctly
 - **Performance ~0.34**: FlashRL patches may not be functioning; the system is likely using the baseline model
+
+If the resulting score obtained is neither **0.36** nor **0.34**, please run the following score to obtain your reference score. 
+
+To obtain the result for `Qwen/Qwen2.5-0.5B-Instruct` under `bf16`:
+```
+lm_eval --model vllm \
+    --model_args pretrained=Qwen/Qwen2.5-0.5B-Instruct,tensor_parallel_size=1,dtype=auto,gpu_memory_utilization=0.8,data_parallel_size=1 \
+    --tasks gsm8k \
+    --batch_size auto
+```
+
+
+To obtain the result for `LiyuanLucasLiu/Qwen2.5-0.5B-Instruct-VERL` for `fp8`:
+```
+lm_eval --model vllm \
+    --model_args pretrained=LiyuanLucasLiu/Qwen2.5-0.5B-Instruct-VERL,tensor_parallel_size=1,dtype=auto,gpu_memory_utilization=0.8,data_parallel_size=1,quantization=fp8 \
+    --tasks gsm8k \
+    --batch_size auto
+```
 
 ### Troubleshooting
 If you don't see the expected performance improvements:
