@@ -112,11 +112,11 @@ Patcher would check the environment variable and operates accordingly. Please fi
 
 Below are the combinations of the environments that we have tested on.
 
-| Image | CUDA | Ray | vLLM | GSM8K INT8 example |
-|--|--|--|--|--|
-| `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.3-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.3 | ✅ Tested |
-| `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.4-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.4 | ✅ Tested |
-| `hiyouga/verl:ngc-th2.7.0-cu12.6-vllm0.9.1` | 12.6 | 2.47.0 | 0.9.1 | ❌ failed |
+| Image | CUDA | Ray | vLLM | verl | flash-rl | GSM8K 8bit example | DAPO INT8 example |
+|--|--|--|--|--|--|--|--|
+| `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.3-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.3 | [flash-rl](https://github.com/yaof20/verl/tree/flash-rl/recipe/flash_rl) | 1.0.1 | ✅ Tested | ✅ Tested |
+| `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.4-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.4 | [flash-rl](https://github.com/yaof20/verl/tree/flash-rl/recipe/flash_rl) | 1.0.1 | ✅ Tested | |
+| `hiyouga/verl:ngc-th2.7.0-cu12.6-vllm0.9.1` | 12.6 | 2.43.0 | 0.8.4 | [flash-rl-vllm0.9.1](https://github.com/yaof20/verl/tree/flash-rl-vllm0.9.1/recipe/flash_rl) | 1.0.2| ✅ Tested | |
 
 ## 🚧 Roadmap & Future Improvements
 
