@@ -466,12 +466,17 @@ def patch_vllm_llm():
                     model = config_data.get('model', model)
                     if config_data.get('fn', 'int8') != 'bf16':
                         
-                        # assert parse(vllm.__version__) <= parse('0.8.4'), (
-                        #     f'detected vLLM version {vllm.__version__}'
-                        #     'for vLLM > 0.8.4, `FlashRL` only supports `bf16` patches'
-                        #     'for exact logprob compute'
-                        # )
-                        
+                        if parse(vllm.__version__) > parse('0.9.1'):
+                            logger.warning(
+                                f'detected vLLM version {vllm.__version__}'
+                                'for vLLM > 0.9.1, `FlashRL` has not been tested'
+                            )
+                        elif parse(vllm.__version__) > parse('0.8.4'):
+                            logger.warning(
+                                f'detected vLLM version {vllm.__version__}'
+                                'for vLLM > 0.9.1, `FlashRL` has not been tested in large scale'
+                            )
+
                         if config_data.get('fn', 'int8') in ['fp8_vllm', 'fp8']:
                             if 'profile' in config_data:
                                 logger.warning(f"flash_rl fp8_vllm profile is not needed, but set as {config_data['profile']}")
