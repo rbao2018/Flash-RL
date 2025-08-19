@@ -559,15 +559,12 @@ def patch_vllm_llm():
                         )
                         
                         if hasattr(model, 'hacked_model_config') and hasattr(model, 'hacked_target_device'):
-                            
-                            process_weights_after_loading_name = '_process_weights_after_loading'
                             try: 
                                 from vllm.model_executor.model_loader import loader
+                                loader._process_weights_after_loading(model, None, None)
                             except ImportError:
-                                from vllm.model_executor.model_loader import utils as loader
-                                process_weights_after_loading_name = 'process_weights_after_loading'
-                                    
-                            getattr(loader, process_weights_after_loading_name)(model, None, None)
+                                from vllm.model_executor.model_loader import utils
+                                utils.process_weights_after_loading(model, None, None)
                             setattr(model, 'hacked_not_need_process_weights_after_loading', True)
                         else:
                             setattr(model, 'hacked_not_need_process_weights_after_loading', False)
