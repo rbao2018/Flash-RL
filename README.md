@@ -65,7 +65,7 @@ FlashRL has 3 major functionality, `profiling`, `configure helper`, and `patcher
 
 ### Profiling (optional for `fp8` and `bf16`)
 
-This step is not needed for the native `fp8` online quantization supported by `vLLM`, and the logprog-only path `bf16`, and is needed for `int8` or `fp8_channel` quantization. Specifically, profilling compares a `bf16` model and a quantized model to decide how the online quantization should be performed for an updated model. Please find below an example for `Qwen/Qwen2.5-32B` and `Qwen/Qwen2.5-0.5B-Instruct`. 
+This step is not needed for the native `fp8` online quantization supported by `vLLM`, and the logprog-only path `bf16`, and is needed for `int8` or `fp8_channel` quantization. Specifically, profilling compares a `bf16` model and a quantized model to decide how the online quantization should be performed for an updated model. Please find below an example for `Qwen/Qwen2.5-32B` and `Qwen/Qwen2.5-0.5B-Instruct`. The quantized model can be any `w8a8`/`fp8` model produced by `llm-compressor`. Note that, Redhat AI provides various [quantized models](https://huggingface.co/RedHatAI), and can be used here as in the 0.5B-Instruct example.
 
 ```bash
 # for `Qwen/Qwen2.5-32B`
