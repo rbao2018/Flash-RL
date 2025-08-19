@@ -45,7 +45,7 @@ setup_flashrl_env()
 
 setup(
     name='flash_llm_rl',
-    version='1.0.0',
+    version='1.0.1',
     description='flash llm rl',
     long_description=read_readme(),
     long_description_content_type="text/markdown",

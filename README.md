@@ -112,6 +112,7 @@ Patcher would check the environment variable and operates accordingly. Please fi
 
 Below are the combinations of the environments that we have tested on.
 
+<<<<<<< HEAD
 | Image | CUDA | Ray | verl | vLLM | GSM8K example |
 |--|--|--|--|--|--|
 | `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.3-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.4.0 | 0.8.3 | Tested |
@@ -120,6 +121,13 @@ Below are the combinations of the environments that we have tested on.
 
 | `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.4-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.4.0 | 0.8.4 | Tested |
 
+=======
+| Image | CUDA | Ray | vLLM | GSM8K INT8 example |
+|--|--|--|--|--|
+| `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.3-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.3 | ✅ Tested |
+| `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.4-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.4 | ✅ Tested |
+| `hiyouga/verl:ngc-th2.7.0-cu12.6-vllm0.9.1` | 12.6 | 2.47.0 | 0.9.1 | ❌ failed |
+>>>>>>> main
 
 ## 🚧 Roadmap & Future Improvements
 
