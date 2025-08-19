@@ -142,7 +142,7 @@ def patch_vllm_process_weights_after_loading():
                             partial_hacked_process_weights_after_loading(model, model_config, target_device)
                         return model.eval()
 
-                    BaseModelLoader.load_model = hacked_load_model1
+                    BaseModelLoader.load_model = hacked_load_model
                     logger.debug('Successfully patched patched vllm BaseModelLoader.load_model')
                 else:
                     logger.debug('vllm BaseModelLoader.load_model already patched')
