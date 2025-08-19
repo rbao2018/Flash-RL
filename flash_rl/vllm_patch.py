@@ -41,7 +41,6 @@ def hacked_process_weights_after_loading(
     model_config, 
     target_device, 
 ) -> None:
-    print("Patched process_weights_after_loading function called!!!!!!")
     if model_config is None and target_device is None:
         model_config = getattr(model, 'hacked_model_config', None)
         target_device = getattr(model, 'hacked_target_device', None)
@@ -93,10 +92,10 @@ def patch_vllm_process_weights_after_loading():
                 from functools import partial
                 loader._process_weights_after_loading = partial(hacked_process_weights_after_loading, original_process_weights_after_loading)
 
-                logger.debug("Successfully patched the process_weights_after_loading function of vllm")
+                logger.debug("Successfully patched the _process_weights_after_loading function of vllm")
                 succeeded_process_weights_after_loading = True
             else:
-                logger.debug("vllm process_weights_after_loading already patched")
+                logger.debug("vllm _process_weights_after_loading already patched")
         except ImportError:
             pass 
         
@@ -110,12 +109,43 @@ def patch_vllm_process_weights_after_loading():
                     utils.beforeflashrl_process_weights_after_loading = original_process_weights_after_loading
 
                     from functools import partial
-                    utils.process_weights_after_loading = partial(hacked_process_weights_after_loading, original_process_weights_after_loading)
+                    partial_hacked_process_weights_after_loading = partial(hacked_process_weights_after_loading, original_process_weights_after_loading)
+                    utils.process_weights_after_loading = partial_hacked_process_weights_after_loading
 
+                    
                     logger.debug("Successfully patched the process_weights_after_loading function of vllm")
                 else:
                     logger.debug("vllm process_weights_after_loading already patched")
-            
+
+                from vllm.model_executor.model_loader.base_loader import BaseModelLoader
+                
+                if not hasattr(BaseModelLoader, 'beforeflashrl_load_model'):
+                    original_load_model = BaseModelLoader.load_model
+                    BaseModelLoader.beforeflashrl_load_model = original_load_model
+
+                    def hacked_load_model(self, vllm_config, model_config):
+                        device_config = vllm_config.device_config
+                        load_config = vllm_config.load_config
+                        if not hasattr(load_config, 'device') or load_config.device is None:
+                            load_device = device_config.device
+                        else:
+                            load_device = load_config.device
+                        target_device = torch.device(load_device)
+                        with utils.set_default_torch_dtype(model_config.dtype):
+                            with target_device:
+                                model = utils.initialize_model(vllm_config=vllm_config,
+                                                        model_config=model_config)
+
+                            logger.debug("Loading weights on %s ...", load_device)
+                            # Quantization does not happen in `load_weights` but after it
+                            self.load_weights(model, model_config)
+                            partial_hacked_process_weights_after_loading(model, model_config, target_device)
+                        return model.eval()
+
+                    BaseModelLoader.load_model = hacked_load_model1
+                    logger.debug('Successfully patched patched vllm BaseModelLoader.load_model')
+                else:
+                    logger.debug('vllm BaseModelLoader.load_model already patched')
             except ImportError as e:
                 if not succeeded_process_weights_after_loading:
                     raise e 
@@ -135,6 +165,8 @@ def patch_vllm_process_weights_after_loading():
                     layer.v_scale = -1.0
                 if not hasattr(layer, 'q_scale'):
                     layer.q_scale = -1.0
+                if not hasattr(layer, 'prob_scale'):
+                    layer.prob_scale = -1.0
                 return original_kvcache_process_weights_after_loading(self, layer)
             BaseKVCacheMethod.process_weights_after_loading = hacked_kvcache_process_weights_after_loading
             
@@ -382,7 +414,7 @@ def load_flashrl_config(config):
     return config_data
 
 def patch_vllm_llm():
-    try:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+    try:
         if not hasattr(vllm.LLM, 'beforeflashrl__init__'):
             # Store the original LLM init function
             original_init = vllm.LLM.__init__
@@ -434,11 +466,11 @@ def patch_vllm_llm():
                     model = config_data.get('model', model)
                     if config_data.get('fn', 'int8') != 'bf16':
                         
-                        assert parse(vllm.__version__) <= parse('0.8.4'), (
-                            f'detected vLLM version {vllm.__version__}'
-                            'for vLLM > 0.8.4, `FlashRL` only supports `bf16` patches'
-                            'for exact logprob compute'
-                        )
+                        # assert parse(vllm.__version__) <= parse('0.8.4'), (
+                        #     f'detected vLLM version {vllm.__version__}'
+                        #     'for vLLM > 0.8.4, `FlashRL` only supports `bf16` patches'
+                        #     'for exact logprob compute'
+                        # )
                         
                         if config_data.get('fn', 'int8') in ['fp8_vllm', 'fp8']:
                             if 'profile' in config_data:
