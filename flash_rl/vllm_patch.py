@@ -35,11 +35,34 @@ recorded_loader_keys = [
     '_assert_and_load',
 ]
 
+def fast_fp8_process_weights_after_loading(self, layer):
+    
+    if self.use_marlin:
+        from vllm.model_executor.layers.quantization.utils.marlin_utils_fp8 import prepare_fp8_layer_for_marlin
+        prepare_fp8_layer_for_marlin(layer, size_k_first)
+        # Activations not quantized for marlin.
+        del layer.input_scale
+
+    # On B200, if E8M0 for DeepGemm is used, we need to
+    # requantize the weight and input to the specific scale
+    # at the same time.
+    if is_blackwell_deep_gemm_e8m0_used():
+        from vllm.model_executor.layers.quantization.utils.fp8_utils import requant_weight_ue8m0_inplace
+        assert layer.weight_block_size is not None
+        block_sz = tuple(layer.weight_block_size)
+        requant_weight_ue8m0_inplace(
+            layer.weight.data,
+            layer.weight_scale_inv.data if hasattr(
+                layer, "weight_scale_inv") else layer.weight_scale.data,
+            block_sz,
+        )
+
 def hacked_process_weights_after_loading(
     original_process_weights_after_loading,
     model, 
     model_config, 
     target_device, 
+    fast_fp8 = False,
 ) -> None:
     if model_config is None and target_device is None:
         model_config = getattr(model, 'hacked_model_config', None)
@@ -73,6 +96,65 @@ def hacked_process_weights_after_loading(
                 else:
                     recorded_loader[k][name] = attr
     
+    if fast_fp8:
+        from vllm.model_executor.layers.linear import QKVCrossParallelLinear
+        from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
+        from vllm.distributed import get_dp_group
+        dp_group = get_dp_group()
+        
+        dp_size = dp_group.world_size
+        dp_rank = dp_group.rank_in_group 
+
+        splitted_groups = [list() for _ in range(dp_size)]
+        ind = 0
+        for name, module in model.named_modules():
+            if (
+                not isinstance(module, QKVCrossParallelLinear)
+                and (
+                    hasattr(module, "quant_method") 
+                    and isinstance(module.quant_method, Fp8LinearMethod))
+            ):
+                splitted_groups[ind % dp_size].append((name, module))
+            ind += 1
+
+        quant_fp8_module_weights = dict()
+        for name, module in splitted_groups[dp_rank]:
+            with torch.no_grad():
+                qweight, weight_scale = ops.scaled_fp8_quant(module.weight.to(target_device),
+                                                             scale=None)
+            quant_fp8_module_weights[name] = (qweight, weight_scale)
+
+        for ind in range(dp_size):
+            splitted_groups_ind = splitted_groups[ind]
+            duplicated_weight_dict = dict() if ind != dp_rank else quant_fp8_module_weights
+            dp_group.broadcast_object(duplicated_weight_dict, src=ind)
+            
+            for name, module in splitted_groups_ind:
+                assert name in duplicated_weight_dict 
+                qweight, weight_scale = duplicated_weight_dict[name]
+                module.weight = Parameter(qweight.t(), requires_grad=False)
+                module.weight_scale = Parameter(weight_scale, requires_grad=False)
+                module.input_scale = None
+                if not hasattr(module.quant_method, 'beforeflashrl_process_weights_after_loading'):
+                    module.quant_method.beforeflashrl_process_weights_after_loading = (
+                        module.quant_method.process_weights_after_loading
+                    )
+                    setattr(
+                        module.quant_method, 
+                        'process_weights_after_loading', 
+                        bond_method_to_cls(fast_fp8_process_weights_after_loading, module.quant_method),
+                    )
+
+    original_process_weights_after_loading(model, model_config, target_device)
+
+    model.hacked_recorded_loader = recorded_loader
+                    hasattr(m, "quant_method") 
+                    and isinstance(m.quant_method, Fp8LinearMethod))
+            )
+        ]
+        for i, (name, module) in enumerate(named_modules):
+            splitted_groups[i % dp_size].append((name, module))
+
     original_process_weights_after_loading(model, model_config, target_device)
             
     model.hacked_recorded_loader = recorded_loader
