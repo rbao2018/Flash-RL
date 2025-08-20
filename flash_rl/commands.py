@@ -32,7 +32,7 @@ def setup_flashrl(name, parser):
     subparser.add_argument(
         '--fn', 
         required=False, 
-        choices=['fp8', 'fp8_vllm', 'fp8_channel', 'fp8_tensor', 'int8', 'int8_wo_prune', 'int8_prune', 'bf16'],
+        choices=['fp8', 'fp8_fast', 'fp8_vllm', 'fp8_vllm_fast', 'fp8_channel', 'fp8_tensor', 'int8', 'int8_wo_prune', 'int8_prune', 'bf16'],
         default='int8',
         help='quantization function to use',
     )
@@ -84,8 +84,8 @@ def setup_flashrl_runner(args):
         args.config_output = os.path.expanduser("~/.flashrl_config.yaml")
     
     config_data = asdict(get_default_config(args.fn))
-    
-    assert args.model is not None or args.fn in ['bf16', 'fp8_vllm'], \
+
+    assert args.model is not None or args.fn in ['bf16', 'fp8_vllm', 'fp8', 'fp8_fast', 'fp8_vllm_fast'], \
         f"model path is required for quantization {args.fn}"
     
     if args.model is not None:

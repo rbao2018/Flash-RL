@@ -6,6 +6,8 @@ def get_default_config(fn):
     return {
         'fp8': FP8vLLMConfig(),
         'fp8_vllm': FP8vLLMConfig(),
+        'fp8_vllm_fast': FP8vLLMConfig(),
+        'fp8_fast': FP8vLLMConfig(),
         'fp8_channel': FP8ChannelConfig(),
         'fp8_tensor': FP8TensorConfig(),
         'int8': Int8Config(),

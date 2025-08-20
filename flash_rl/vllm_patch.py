@@ -62,7 +62,6 @@ def hacked_process_weights_after_loading(
     model, 
     model_config, 
     target_device, 
-    fast_fp8 = False,
 ) -> None:
     if model_config is None and target_device is None:
         model_config = getattr(model, 'hacked_model_config', None)
@@ -96,7 +95,7 @@ def hacked_process_weights_after_loading(
                 else:
                     recorded_loader[k][name] = attr
     
-    if fast_fp8:
+    if hasattr(model, 'flashrl_quant_fn') and model.flashrl_quant_fn in ['fp8_fast', 'fp8_vllm_fast']:
         from vllm.model_executor.layers.linear import QKVCrossParallelLinear
         from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
         from vllm.distributed import get_dp_group
@@ -501,7 +500,7 @@ def load_flashrl_config(config):
     
     config_path = config.strip()
     
-    if config_path in ['bf16', 'fp8', 'fp8_vllm']: 
+    if config_path in ['bf16', 'fp8', 'fp8_vllm', 'fp8_fast', 'fp8_vllm_fast']: 
         logger.info(f"Using profile-free default for: {config_path}")
         
         from .configs import get_default_config
@@ -586,7 +585,7 @@ def patch_vllm_llm():
                                 'for vLLM > 0.9.1, `FlashRL` has not been tested in large scale'
                             )
 
-                        if config_data.get('fn', 'int8') in ['fp8_vllm', 'fp8']:
+                        if config_data.get('fn', 'int8') in ['fp8_vllm', 'fp8', 'fp8_fast', 'fp8_vllm_fast']:
                             if 'profile' in config_data:
                                 logger.warning(f"flash_rl fp8_vllm profile is not needed, but set as {config_data['profile']}")
                             self.flash_rl_profile = None
@@ -624,6 +623,7 @@ def patch_vllm_llm():
                     (config_data.get('fn', 'int8') != 'bf16'):
                         
                     model = vllm_model_finder(self)
+                    model.flashrl_quant_fn = quant_fn
                     quant_fn = config_data.get('fn', 'int8')
                     logger.debug(f"flash_rl quantization function: {quant_fn}")
                     flash_quantize_fn = get_quantize_fn(quant_fn)

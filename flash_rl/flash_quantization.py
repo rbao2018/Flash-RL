@@ -121,6 +121,8 @@ quant_fn_map = {
     'int8_prune': flash_quantize_with_prune,
     'fp8': lambda weights, profile: weights,
     'fp8_vllm': lambda weights, profile: weights,
+    'fp8_fast': lambda weights, profile: weights,
+    'fp8_vllm_fast': lambda weights, profile: weights,
     'fp8_tensor': flash_quantize_fp8_tensor,
     'fp8_channel': flash_quantize_fp8_channel,
 }
