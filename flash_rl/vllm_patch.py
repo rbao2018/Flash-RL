@@ -35,34 +35,40 @@ recorded_loader_keys = [
     '_assert_and_load',
 ]
 
-def fast_fp8_process_weights_after_loading(self, layer):
+# def fast_fp8_process_weights_after_loading(self, layer):
     
-    if self.use_marlin:
-        from vllm.model_executor.layers.quantization.utils.marlin_utils_fp8 import prepare_fp8_layer_for_marlin
-        prepare_fp8_layer_for_marlin(layer, True)
-        # Activations not quantized for marlin.
-        del layer.input_scale
+#     if self.use_marlin:
+#         from vllm.model_executor.layers.quantization.utils.marlin_utils_fp8 import prepare_fp8_layer_for_marlin
+#         prepare_fp8_layer_for_marlin(layer, True)
+#         # Activations not quantized for marlin.
+#         del layer.input_scale
 
-    # from vllm.utils.deep_gemm import is_blackwell_deep_gemm_e8m0_used
-    # # On B200, if E8M0 for DeepGemm is used, we need to
-    # # requantize the weight and input to the specific scale
-    # # at the same time.
-    # if is_blackwell_deep_gemm_e8m0_used():
-    #     from vllm.model_executor.layers.quantization.utils.fp8_utils import requant_weight_ue8m0_inplace
-    #     assert layer.weight_block_size is not None
-    #     block_sz = tuple(layer.weight_block_size)
-    #     requant_weight_ue8m0_inplace(
-    #         layer.weight.data,
-    #         layer.weight_scale_inv.data if hasattr(
-    #             layer, "weight_scale_inv") else layer.weight_scale.data,
-    #         block_sz,
-    #     )
+#     # from vllm.utils.deep_gemm import is_blackwell_deep_gemm_e8m0_used
+#     # # On B200, if E8M0 for DeepGemm is used, we need to
+#     # # requantize the weight and input to the specific scale
+#     # # at the same time.
+#     # if is_blackwell_deep_gemm_e8m0_used():
+#     #     from vllm.model_executor.layers.quantization.utils.fp8_utils import requant_weight_ue8m0_inplace
+#     #     assert layer.weight_block_size is not None
+#     #     block_sz = tuple(layer.weight_block_size)
+#     #     requant_weight_ue8m0_inplace(
+#     #         layer.weight.data,
+#     #         layer.weight_scale_inv.data if hasattr(
+#     #             layer, "weight_scale_inv") else layer.weight_scale.data,
+#     #         block_sz,
+#     #     )
+
+def get_storage_tensor(strided):
+    storage = strided.untyped_storage()
+    return torch.frombuffer(storage, dtype=strided.dtype)
 
 def hacked_process_weights_after_loading(
     original_process_weights_after_loading,
     model, 
     model_config, 
     target_device, 
+    hacked_data_dict = None,
+    updated_params = None,
 ) -> None:
     if model_config is None and target_device is None:
         model_config = getattr(model, 'hacked_model_config', None)
@@ -96,58 +102,75 @@ def hacked_process_weights_after_loading(
                 else:
                     recorded_loader[k][name] = attr
     
-    if hasattr(model, 'flashrl_quant_fn') and model.flashrl_quant_fn in ['fp8_fast', 'fp8_vllm_fast']:
+    if hasattr(model, 'flashrl_quant_fn') and model.flashrl_quant_fn in ['fp8_fast', 'fp8_vllm_fast'] and hacked_data_dict is not None:
         from vllm.model_executor.layers.linear import QKVCrossParallelLinear
         from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
-        from vllm.distributed import get_dp_group
-        from vllm import _custom_ops as ops
-        dp_group = get_dp_group()
-        
-        dp_size = dp_group.world_size
-        dp_rank = dp_group.rank_in_group 
+        from vllm.model_executor.layers.quantization.compressed_tensors.schemes import CompressedTensorsW8A8Int8
 
-        splitted_groups = [list() for _ in range(dp_size)]
-        ind = 0
         for name, module in model.named_modules():
-            if (
-                not isinstance(module, QKVCrossParallelLinear)
-                and (
-                    hasattr(module, "quant_method") 
-                    and isinstance(module.quant_method, Fp8LinearMethod))
-            ):
-                splitted_groups[ind % dp_size].append((name, module))
-            ind += 1
+            if isinstance(module, QKVCrossParallelLinear):
+                module.process_weights_after_loading()
+                continue
 
-        quant_fp8_module_weights = dict()
-        with torch.no_grad():
-            for name, module in splitted_groups[dp_rank]:
-                qweight, weight_scale = ops.scaled_fp8_quant(module.weight.to(target_device),
-                                                             scale=None)
-                quant_fp8_module_weights[name] = (qweight, weight_scale)
+            quant_method = getattr(module, "quant_method", None)
+            if isinstance(quant_method, QuantizeMethodBase):
+                
+                if isinstance(quant_method, Fp8LinearMethod) or isinstance(quant_method, CompressedTensorsW8A8Int8):
+                    # for fast processing, we will do manual processing later
+                    continue
+                
+                with device_loading_context(module, target_device):
+                    quant_method.process_weights_after_loading(module)
 
-        for ind in range(dp_size):
-            splitted_groups_ind = splitted_groups[ind]
-            duplicated_weight_dict = dict() if ind != dp_rank else quant_fp8_module_weights
-            dp_group.broadcast_object(duplicated_weight_dict, src=ind)
+        skipped_params = list()
+        all_updated_params = dict(model.named_parameters())
+        for name, p in all_updated_params.items():
+            if 'weight_scale' not in name:
+                if name in updated_params and p.dtype != hacked_data_dict[name].dtype:
+                    weight_output = get_storage_tensor(hacked_data_dict[name])
+                    scale_output = get_storage_tensor(hacked_data_dict[name + '_scale'])
+                    torch.ops._C.dynamic_scaled_fp8_quant(
+                        weight_output, p.to(target_device), scale_output,
+                    )
+                    tmp_data = p.data 
+                    p.data = hacked_data_dict[name]
+                    del tmp_data
+                    pscale = all_updated_params[name + '_scale']
+                    tmp_data = pscale.data
+                    pscale.data = hacked_data_dict[name + '_scale']
+                    del tmp_data
+                    
+                else:
+                    skipped_params.append(name)
+                    tmp_data = p.data
+                    p.data = hacked_data_dict[name]
+                    del tmp_data
+        del skipped_params
+        logger.debug(f"flash_rl load_weights skipped params (not accurate for `fp8-vllm`): {skipped_params}")
+
+    else:
+        original_process_weights_after_loading(model, model_config, target_device)
+
+        if hacked_data_dict is not None:
+            skipped_params = list()
+            for name, p in model.named_parameters():
+                assert name in hacked_data_dict, f'param {name} is not in hacked_data dict'
+                assert hacked_data_dict[name].dtype == p.data.dtype, f'param {name} dtype mismatch: {hacked_data_dict[name].dtype} vs {p.data.dtype}'
+                assert hacked_data_dict[name].numel() == p.data.numel(), f'param {name} numel() mismatch: {hacked_data_dict[name].numel()} vs {p.data.numel()}'
+                
+                if name in updated_params:
+                    trided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
+                    hacked_data_dict[name].copy_(trided_data)
+                else:
+                    skipped_params.append(name)
+                    
+                tmp_data = p.data
+                p.data = hacked_data_dict[name]
+                del tmp_data
             
-            for name, module in splitted_groups_ind:
-                assert name in duplicated_weight_dict 
-                qweight, weight_scale = duplicated_weight_dict[name]
-                module.weight = torch.nn.parameter.Parameter(qweight.t(), requires_grad=False)
-                module.weight_scale = torch.nn.parameter.Parameter(weight_scale, requires_grad=False)
-                module.input_scale = None
-                if not hasattr(module.quant_method, 'beforeflashrl_process_weights_after_loading'):
-                    module.quant_method.beforeflashrl_process_weights_after_loading = (
-                        module.quant_method.process_weights_after_loading
-                    )
-                    setattr(
-                        module.quant_method, 
-                        'process_weights_after_loading', 
-                        bond_method_to_cls(fast_fp8_process_weights_after_loading, module.quant_method),
-                    )
-
-    original_process_weights_after_loading(model, model_config, target_device)
-
+            logger.debug(f"flash_rl load_weights skipped params (not accurate for `fp8-vllm`): {skipped_params}")
+            del skipped_params
+                            
     model.hacked_recorded_loader = recorded_loader
 
 def patch_vllm_process_weights_after_loading():
@@ -665,7 +688,7 @@ def patch_vllm_llm():
                         if hasattr(model, 'hacked_model_config') and hasattr(model, 'hacked_target_device'):
                             try: 
                                 from vllm.model_executor.model_loader import loader
-                                loader._process_weights_after_loading(model, None, None)
+                                loader._process_weights_after_loading(model, None, None, hacked_data_dict=hacked_data_dict, updated_params=updated_params)
                             except ImportError:
                                 from vllm.model_executor.model_loader import utils
                                 utils.process_weights_after_loading(model, None, None)
@@ -673,24 +696,25 @@ def patch_vllm_llm():
                         else:
                             setattr(model, 'hacked_not_need_process_weights_after_loading', False)
                         
-                        skipped_params = list()
-                        for name, p in model.named_parameters():
-                            assert name in hacked_data_dict, f'param {name} is not in hacked_data dict'
-                            assert hacked_data_dict[name].dtype == p.data.dtype, f'param {name} dtype mismatch: {hacked_data_dict[name].dtype} vs {p.data.dtype}'
-                            assert hacked_data_dict[name].numel() == p.data.numel(), f'param {name} numel() mismatch: {hacked_data_dict[name].numel()} vs {p.data.numel()}'
-                            
-                            if name in updated_params:
-                                trided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
-                                hacked_data_dict[name].copy_(trided_data)
-                            else:
-                                skipped_params.append(name)
+                            skipped_params = list()
+                            for name, p in model.named_parameters():
+                                assert name in hacked_data_dict, f'param {name} is not in hacked_data dict'
+                                assert hacked_data_dict[name].dtype == p.data.dtype, f'param {name} dtype mismatch: {hacked_data_dict[name].dtype} vs {p.data.dtype}'
+                                assert hacked_data_dict[name].numel() == p.data.numel(), f'param {name} numel() mismatch: {hacked_data_dict[name].numel()} vs {p.data.numel()}'
                                 
-                            tmp_data = p.data
-                            p.data = hacked_data_dict[name]
-                            del tmp_data
-                        
-                        logger.debug(f"flash_rl load_weights skipped params (not accurate for `fp8-vllm`): {skipped_params}")
-                        del skipped_params
+                                if name in updated_params:
+                                    trided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
+                                    hacked_data_dict[name].copy_(trided_data)
+                                else:
+                                    skipped_params.append(name)
+                                    
+                                tmp_data = p.data
+                                p.data = hacked_data_dict[name]
+                                del tmp_data
+                            
+                            logger.debug(f"flash_rl load_weights skipped params (not accurate for `fp8-vllm`): {skipped_params}")
+                            del skipped_params
+                            
                         del hacked_data_dict
                         gc.collect()
                         torch.cuda.empty_cache()
