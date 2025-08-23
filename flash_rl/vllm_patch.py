@@ -147,17 +147,7 @@ def hacked_process_weights_after_loading(
     original_process_weights_after_loading(model, model_config, target_device)
 
     model.hacked_recorded_loader = recorded_loader
-                    hasattr(m, "quant_method") 
-                    and isinstance(m.quant_method, Fp8LinearMethod))
-            )
-        ]
-        for i, (name, module) in enumerate(named_modules):
-            splitted_groups[i % dp_size].append((name, module))
 
-    original_process_weights_after_loading(model, model_config, target_device)
-            
-    model.hacked_recorded_loader = recorded_loader
-    
 def patch_vllm_process_weights_after_loading():
     try:        
         succeeded_process_weights_after_loading = False
@@ -623,8 +613,8 @@ def patch_vllm_llm():
                     (config_data.get('fn', 'int8') != 'bf16'):
                         
                     model = vllm_model_finder(self)
-                    model.flashrl_quant_fn = quant_fn
                     quant_fn = config_data.get('fn', 'int8')
+                    model.flashrl_quant_fn = quant_fn
                     logger.debug(f"flash_rl quantization function: {quant_fn}")
                     flash_quantize_fn = get_quantize_fn(quant_fn)
                      
