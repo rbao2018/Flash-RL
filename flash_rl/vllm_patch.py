@@ -39,23 +39,24 @@ def fast_fp8_process_weights_after_loading(self, layer):
     
     if self.use_marlin:
         from vllm.model_executor.layers.quantization.utils.marlin_utils_fp8 import prepare_fp8_layer_for_marlin
-        prepare_fp8_layer_for_marlin(layer, size_k_first)
+        prepare_fp8_layer_for_marlin(layer, True)
         # Activations not quantized for marlin.
         del layer.input_scale
 
-    # On B200, if E8M0 for DeepGemm is used, we need to
-    # requantize the weight and input to the specific scale
-    # at the same time.
-    if is_blackwell_deep_gemm_e8m0_used():
-        from vllm.model_executor.layers.quantization.utils.fp8_utils import requant_weight_ue8m0_inplace
-        assert layer.weight_block_size is not None
-        block_sz = tuple(layer.weight_block_size)
-        requant_weight_ue8m0_inplace(
-            layer.weight.data,
-            layer.weight_scale_inv.data if hasattr(
-                layer, "weight_scale_inv") else layer.weight_scale.data,
-            block_sz,
-        )
+    # from vllm.utils.deep_gemm import is_blackwell_deep_gemm_e8m0_used
+    # # On B200, if E8M0 for DeepGemm is used, we need to
+    # # requantize the weight and input to the specific scale
+    # # at the same time.
+    # if is_blackwell_deep_gemm_e8m0_used():
+    #     from vllm.model_executor.layers.quantization.utils.fp8_utils import requant_weight_ue8m0_inplace
+    #     assert layer.weight_block_size is not None
+    #     block_sz = tuple(layer.weight_block_size)
+    #     requant_weight_ue8m0_inplace(
+    #         layer.weight.data,
+    #         layer.weight_scale_inv.data if hasattr(
+    #             layer, "weight_scale_inv") else layer.weight_scale.data,
+    #         block_sz,
+    #     )
 
 def hacked_process_weights_after_loading(
     original_process_weights_after_loading,
@@ -99,6 +100,7 @@ def hacked_process_weights_after_loading(
         from vllm.model_executor.layers.linear import QKVCrossParallelLinear
         from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
         from vllm.distributed import get_dp_group
+        from vllm import _custom_ops as ops
         dp_group = get_dp_group()
         
         dp_size = dp_group.world_size
@@ -117,11 +119,11 @@ def hacked_process_weights_after_loading(
             ind += 1
 
         quant_fp8_module_weights = dict()
-        for name, module in splitted_groups[dp_rank]:
-            with torch.no_grad():
+        with torch.no_grad():
+            for name, module in splitted_groups[dp_rank]:
                 qweight, weight_scale = ops.scaled_fp8_quant(module.weight.to(target_device),
                                                              scale=None)
-            quant_fp8_module_weights[name] = (qweight, weight_scale)
+                quant_fp8_module_weights[name] = (qweight, weight_scale)
 
         for ind in range(dp_size):
             splitted_groups_ind = splitted_groups[ind]
@@ -131,8 +133,8 @@ def hacked_process_weights_after_loading(
             for name, module in splitted_groups_ind:
                 assert name in duplicated_weight_dict 
                 qweight, weight_scale = duplicated_weight_dict[name]
-                module.weight = Parameter(qweight.t(), requires_grad=False)
-                module.weight_scale = Parameter(weight_scale, requires_grad=False)
+                module.weight = torch.nn.parameter.Parameter(qweight.t(), requires_grad=False)
+                module.weight_scale = torch.nn.parameter.Parameter(weight_scale, requires_grad=False)
                 module.input_scale = None
                 if not hasattr(module.quant_method, 'beforeflashrl_process_weights_after_loading'):
                     module.quant_method.beforeflashrl_process_weights_after_loading = (
