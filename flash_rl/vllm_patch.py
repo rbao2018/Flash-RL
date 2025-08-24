@@ -103,9 +103,12 @@ def hacked_process_weights_after_loading(
                     recorded_loader[k][name] = attr
     
     if hasattr(model, 'flashrl_quant_fn') and model.flashrl_quant_fn in ['fp8_fast', 'fp8_vllm_fast'] and hacked_data_dict is not None:
+        logger.debug('flash_rl fast process_weight_after_loading called')
         from vllm.model_executor.layers.linear import QKVCrossParallelLinear
         from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
+        from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
         from vllm.model_executor.layers.quantization.compressed_tensors.schemes import CompressedTensorsW8A8Int8
+        from vllm.model_executor.model_loader.utils import device_loading_context
 
         for name, module in model.named_modules():
             if isinstance(module, QKVCrossParallelLinear):
@@ -149,6 +152,7 @@ def hacked_process_weights_after_loading(
         logger.debug(f"flash_rl load_weights skipped params (not accurate for `fp8-vllm`): {skipped_params}")
 
     else:
+        logger.debug("flash_rl slow process_weight_after_loadding called")
         original_process_weights_after_loading(model, model_config, target_device)
 
         if hacked_data_dict is not None:
