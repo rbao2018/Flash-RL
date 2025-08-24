@@ -32,7 +32,7 @@ def setup_flashrl(name, parser):
     subparser.add_argument(
         '--fn', 
         required=False, 
-        choices=['fp8', 'fp8_fast', 'fp8_vllm', 'fp8_vllm_fast', 'fp8_channel', 'fp8_tensor', 'int8', 'int8_wo_prune', 'int8_prune', 'bf16'],
+        choices=['fp8', 'fp8_fast', 'fp8_vllm', 'fp8_vllm_fast', 'fp8_channel', 'fp8_tensor', 'int8', 'int8_fast', 'int8_wo_prune', 'int8_prune', 'bf16'],
         default='int8',
         help='quantization function to use',
     )

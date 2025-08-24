@@ -117,6 +117,7 @@ def flash_quantize_fp8_tensor(weights, profile):
 
 quant_fn_map = {
     'int8': flash_quantize,
+    'int8_fast': flash_quantize,
     'int8_wo_prune': flash_quantize,
     'int8_prune': flash_quantize_with_prune,
     'fp8': lambda weights, profile: weights,

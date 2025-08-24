@@ -35,29 +35,6 @@ recorded_loader_keys = [
     '_assert_and_load',
 ]
 
-# def fast_fp8_process_weights_after_loading(self, layer):
-    
-#     if self.use_marlin:
-#         from vllm.model_executor.layers.quantization.utils.marlin_utils_fp8 import prepare_fp8_layer_for_marlin
-#         prepare_fp8_layer_for_marlin(layer, True)
-#         # Activations not quantized for marlin.
-#         del layer.input_scale
-
-#     # from vllm.utils.deep_gemm import is_blackwell_deep_gemm_e8m0_used
-#     # # On B200, if E8M0 for DeepGemm is used, we need to
-#     # # requantize the weight and input to the specific scale
-#     # # at the same time.
-#     # if is_blackwell_deep_gemm_e8m0_used():
-#     #     from vllm.model_executor.layers.quantization.utils.fp8_utils import requant_weight_ue8m0_inplace
-#     #     assert layer.weight_block_size is not None
-#     #     block_sz = tuple(layer.weight_block_size)
-#     #     requant_weight_ue8m0_inplace(
-#     #         layer.weight.data,
-#     #         layer.weight_scale_inv.data if hasattr(
-#     #             layer, "weight_scale_inv") else layer.weight_scale.data,
-#     #         block_sz,
-#     #     )
-
 def hacked_process_weights_after_loading(
     original_process_weights_after_loading,
     model, 
@@ -103,7 +80,7 @@ def hacked_process_weights_after_loading(
     print(f'first stage completed in {end_time - start_time:.2f} seconds')
     start_time = end_time
 
-    if hasattr(model, 'flashrl_quant_fn') and model.flashrl_quant_fn in ['fp8_fast', 'fp8_vllm_fast'] and hacked_data_dict is not None:
+    if hasattr(model, 'flashrl_quant_fn') and 'fast' in model.flashrl_quant_fn and hacked_data_dict is not None:
         logger.debug('flash_rl fast process_weight_after_loading called')
         from vllm.model_executor.layers.linear import QKVCrossParallelLinear
         from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
@@ -134,35 +111,49 @@ def hacked_process_weights_after_loading(
         print(f'second stage completed in {end_time - start_time:.2f} seconds')
         start_time = end_time
 
-
         skipped_params = list()
         all_updated_params = dict(model.named_parameters())
-        for name, p in all_updated_params.items():
-            if 'weight_scale' not in name:
-                if name in updated_params:
-                    if p.dtype != hacked_data_dict[name].dtype:
-                        weight_output = hacked_data_dict[name].t()
-                        scale_output = hacked_data_dict[name + '_scale']
-                        torch.ops._C.dynamic_scaled_fp8_quant(
-                            weight_output, p.to(target_device), scale_output,
-                        )
-                        pscale = all_updated_params[name + '_scale']
-                        tmp_data = pscale.data
-                        pscale.data = hacked_data_dict[name + '_scale']
+        if 'fp8' in model.flashrl_quant_fn:
+            for name, p in all_updated_params.items():
+                if 'weight_scale' not in name:
+                    if name in updated_params:
+                        if p.dtype != hacked_data_dict[name].dtype:
+                            weight_output = hacked_data_dict[name].t()
+                            scale_output = hacked_data_dict[name + '_scale']
+                            torch.ops._C.dynamic_scaled_fp8_quant(
+                                weight_output, p.to(target_device), scale_output,
+                            )
+                            pscale = all_updated_params[name + '_scale']
+                            tmp_data = pscale.data
+                            pscale.data = hacked_data_dict[name + '_scale']
+                            del tmp_data
+                        else:
+                            strided_data = torch.as_strided(
+                                    p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
+                            hacked_data_dict[name].copy_(strided_data)
+                        tmp_data = p.data
+                        p.data = hacked_data_dict[name]
                         del tmp_data
+                        
                     else:
-                        strided_data = torch.as_strided(
-                                p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
-                        hacked_data_dict[name].copy_(strided_data)
-                    tmp_data = p.data
-                    p.data = hacked_data_dict[name]
-                    del tmp_data
-                    
+                        skipped_params.append(name)
+                        tmp_data = p.data
+                        p.data = hacked_data_dict[name]
+                        del tmp_data
+        else:
+            assert 'int8' in model.flashrl_quant_fn, 'fast loading only supports int8 and fp8'
+        
+            for name, p in all_updated_params.items():
+                if name in updated_params:
+                    strided_data = torch.as_strided(
+                            p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
+                    hacked_data_dict[name].copy_(strided_data)
                 else:
                     skipped_params.append(name)
-                    tmp_data = p.data
-                    p.data = hacked_data_dict[name]
-                    del tmp_data
+                    
+                tmp_data = p.data
+                p.data = hacked_data_dict[name]
+                del tmp_data
         
         end_time = time.time()
         print(f'third stage completed in {end_time - start_time:.2f} seconds')
@@ -183,8 +174,8 @@ def hacked_process_weights_after_loading(
                 assert hacked_data_dict[name].numel() == p.data.numel(), f'param {name} numel() mismatch: {hacked_data_dict[name].numel()} vs {p.data.numel()}'
                 
                 if name in updated_params:
-                    trided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
-                    hacked_data_dict[name].copy_(trided_data)
+                    strided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
+                    hacked_data_dict[name].copy_(strided_data)
                 else:
                     skipped_params.append(name)
                     
@@ -719,7 +710,6 @@ def patch_vllm_llm():
                             setattr(model, 'hacked_not_need_process_weights_after_loading', True)
                         else:
                             setattr(model, 'hacked_not_need_process_weights_after_loading', False)
-                        
                             skipped_params = list()
                             for name, p in model.named_parameters():
                                 assert name in hacked_data_dict, f'param {name} is not in hacked_data dict'
@@ -727,8 +717,8 @@ def patch_vllm_llm():
                                 assert hacked_data_dict[name].numel() == p.data.numel(), f'param {name} numel() mismatch: {hacked_data_dict[name].numel()} vs {p.data.numel()}'
                                 
                                 if name in updated_params:
-                                    trided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
-                                    hacked_data_dict[name].copy_(trided_data)
+                                    strided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
+                                    hacked_data_dict[name].copy_(strided_data)
                                 else:
                                     skipped_params.append(name)
                                     
