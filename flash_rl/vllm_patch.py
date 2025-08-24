@@ -289,7 +289,7 @@ def patch_vllm_fp8_create_weight():
                 *args,
                 **kwargs,
             ) -> None:
-                with disable_mem_pool():
+                with disable_mem_pool(disable=True):
                     original_return = original_create_weight(self, *args, **kwargs)
                 return original_return
 
