@@ -108,7 +108,7 @@ def hacked_process_weights_after_loading(
         from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
         from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
         from vllm.model_executor.layers.quantization.compressed_tensors.schemes import CompressedTensorsW8A8Int8
-        from vllm.model_executor.model_loader.utils import device_loading_context
+        from vllm.model_executor.model_loader import utils
 
         for name, module in model.named_modules():
             if isinstance(module, QKVCrossParallelLinear):
@@ -122,7 +122,7 @@ def hacked_process_weights_after_loading(
                     # for fast processing, we will do manual processing later
                     continue
                 
-                with device_loading_context(module, target_device):
+                with utils.device_loading_context(module, target_device):
                     quant_method.process_weights_after_loading(module)
 
         skipped_params = list()
