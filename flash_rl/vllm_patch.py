@@ -58,10 +58,6 @@ recorded_loader_keys = [
 #     #         block_sz,
 #     #     )
 
-def get_storage_tensor(strided):
-    storage = strided.untyped_storage()
-    return torch.frombuffer(storage, dtype=strided.dtype)
-
 def hacked_process_weights_after_loading(
     original_process_weights_after_loading,
     model, 
@@ -133,18 +129,23 @@ def hacked_process_weights_after_loading(
         all_updated_params = dict(model.named_parameters())
         for name, p in all_updated_params.items():
             if 'weight_scale' not in name:
-                if name in updated_params and p.dtype != hacked_data_dict[name].dtype:
-                    weight_output = get_storage_tensor(hacked_data_dict[name])
-                    scale_output = get_storage_tensor(hacked_data_dict[name + '_scale'])
-                    torch.ops._C.dynamic_scaled_fp8_quant(
-                        weight_output, p.to(target_device), scale_output,
-                    )
-                    tmp_data = p.data 
+                if name in updated_params:
+                    if p.dtype != hacked_data_dict[name].dtype:
+                        weight_output = hacked_data_dict[name].t()
+                        scale_output = hacked_data_dict[name + '_scale']
+                        torch.ops._C.dynamic_scaled_fp8_quant(
+                            weight_output, p.to(target_device), scale_output,
+                        )
+                        pscale = all_updated_params[name + '_scale']
+                        tmp_data = pscale.data
+                        pscale.data = hacked_data_dict[name + '_scale']
+                        del tmp_data
+                    else:
+                        strided_data = torch.as_strided(
+                                p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
+                        hacked_data_dict[name].copy_(strided_data)
+                    tmp_data = p.data
                     p.data = hacked_data_dict[name]
-                    del tmp_data
-                    pscale = all_updated_params[name + '_scale']
-                    tmp_data = pscale.data
-                    pscale.data = hacked_data_dict[name + '_scale']
                     del tmp_data
                     
                 else:
@@ -152,9 +153,9 @@ def hacked_process_weights_after_loading(
                     tmp_data = p.data
                     p.data = hacked_data_dict[name]
                     del tmp_data
+        logger.debug(f"flash_rl load_weights skipped params: {skipped_params}")
         del skipped_params
-        logger.debug(f"flash_rl load_weights skipped params (not accurate for `fp8-vllm`): {skipped_params}")
-
+        
     else:
         logger.debug("flash_rl slow process_weight_after_loadding called")
         original_process_weights_after_loading(model, model_config, target_device)
