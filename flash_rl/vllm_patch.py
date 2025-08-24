@@ -66,6 +66,8 @@ def hacked_process_weights_after_loading(
     hacked_data_dict = None,
     updated_params = None,
 ) -> None:
+    import time 
+    start_time = time.time()
     if model_config is None and target_device is None:
         model_config = getattr(model, 'hacked_model_config', None)
         target_device = getattr(model, 'hacked_target_device', None)
@@ -97,7 +99,10 @@ def hacked_process_weights_after_loading(
                     recorded_loader[k][name] = attr.__func__
                 else:
                     recorded_loader[k][name] = attr
-    
+    end_time = time.time()
+    print(f'first stage completed in {end_time - start_time:.2f} seconds')
+    start_time = end_time
+
     if hasattr(model, 'flashrl_quant_fn') and model.flashrl_quant_fn in ['fp8_fast', 'fp8_vllm_fast'] and hacked_data_dict is not None:
         logger.debug('flash_rl fast process_weight_after_loading called')
         from vllm.model_executor.layers.linear import QKVCrossParallelLinear
@@ -124,6 +129,11 @@ def hacked_process_weights_after_loading(
                 
                 with device_loading_context(module, target_device):
                     quant_method.process_weights_after_loading(module)
+
+        end_time = time.time()
+        print(f'second stage completed in {end_time - start_time:.2f} seconds')
+        start_time = end_time
+
 
         skipped_params = list()
         all_updated_params = dict(model.named_parameters())
@@ -153,6 +163,11 @@ def hacked_process_weights_after_loading(
                     tmp_data = p.data
                     p.data = hacked_data_dict[name]
                     del tmp_data
+        
+        end_time = time.time()
+        print(f'third stage completed in {end_time - start_time:.2f} seconds')
+        start_time = end_time
+
         logger.debug(f"flash_rl load_weights skipped params: {skipped_params}")
         del skipped_params
         
