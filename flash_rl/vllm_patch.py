@@ -136,7 +136,8 @@ def hacked_process_weights_after_loading(
         
             for name, p in all_updated_params.items():
                 if name in updated_params:
-                    strided_data = p.data.t()
+                    strided_data = torch.as_strided(
+                            p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
                     hacked_data_dict[name].copy_(strided_data)
                 else:
                     skipped_params.append(name)
