@@ -156,10 +156,6 @@ def hacked_process_weights_after_loading(
         if hacked_data_dict is not None:
             skipped_params = list()
             for name, p in model.named_parameters():
-                assert name in hacked_data_dict, f'param {name} is not in hacked_data dict'
-                assert hacked_data_dict[name].dtype == p.data.dtype, f'param {name} dtype mismatch: {hacked_data_dict[name].dtype} vs {p.data.dtype}'
-                assert hacked_data_dict[name].numel() == p.data.numel(), f'param {name} numel() mismatch: {hacked_data_dict[name].numel()} vs {p.data.numel()}'
-                
                 if name in updated_params:
                     strided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
                     hacked_data_dict[name].copy_(strided_data)
@@ -699,10 +695,6 @@ def patch_vllm_llm():
                             setattr(model, 'hacked_not_need_process_weights_after_loading', False)
                             skipped_params = list()
                             for name, p in model.named_parameters():
-                                assert name in hacked_data_dict, f'param {name} is not in hacked_data dict'
-                                assert hacked_data_dict[name].dtype == p.data.dtype, f'param {name} dtype mismatch: {hacked_data_dict[name].dtype} vs {p.data.dtype}'
-                                assert hacked_data_dict[name].numel() == p.data.numel(), f'param {name} numel() mismatch: {hacked_data_dict[name].numel()} vs {p.data.numel()}'
-                                
                                 if name in updated_params:
                                     strided_data = torch.as_strided(p.data, hacked_data_dict[name].shape, hacked_data_dict[name].stride())
                                     hacked_data_dict[name].copy_(strided_data)
