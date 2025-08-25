@@ -116,7 +116,8 @@ Below are the combinations of the environments that we have tested on.
 |--|--|--|--|--|--|--|--|
 | `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.3-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.3 | [flash-rl](https://github.com/yaof20/verl/tree/flash-rl/recipe/flash_rl) | 1.0.1 | ✅ Tested | ✅ Tested |
 | `hiyouga/verl:ngc-th2.6.0-cu126-vllm0.8.4-flashinfer0.2.2-cxx11abi0` | 12.6 | 2.43.0 | 0.8.4 | [flash-rl](https://github.com/yaof20/verl/tree/flash-rl/recipe/flash_rl) | 1.0.1 | ✅ Tested | |
-| `hiyouga/verl:ngc-th2.7.0-cu12.6-vllm0.9.1` | 12.6 | 2.43.0 | 0.8.4 | [flash-rl-vllm0.9.1](https://github.com/yaof20/verl/tree/flash-rl-vllm0.9.1/recipe/flash_rl) | 1.0.2| ✅ Tested | |
+| `hiyouga/verl:ngc-th2.7.0-cu12.6-vllm0.9.1` | 12.6 | 2.43.0 | 0.9.1 | [flash-rl-vllm0.9.1](https://github.com/yaof20/verl/tree/flash-rl-vllm0.9.1/recipe/flash_rl) | 1.0.2| ✅ Tested | |
+| `hiyouga/verl:ngc-th2.7.1-cu12.6-vllm0.10.0` | 12.6 | 2.48.0 | 0.10.0 | [flash-rl-vllm0.9.1](https://github.com/yaof20/verl/tree/flash-rl-vllm0.9.1/recipe/flash_rl) | 1.0.2| ✅ Tested | |
 
 ## 🚧 Roadmap & Future Improvements
 
