@@ -2,6 +2,8 @@ import os
 import torch 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import logging
+import triton
+import triton.language as tl
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +122,76 @@ def flash_noquantize(weights, profile):
     for name, tensor in weights:
         yield (name, tensor)
 
+@triton.jit
+def _blockwise_cast_to_fp8_triton(
+    X,
+    Y,
+    S,
+    stride_xm,
+    stride_xn,
+    stride_ym,
+    stride_yn,
+    stride_sm,
+    stride_sn,
+    M,
+    N,
+    eps,
+    fp8_min,
+    fp8_max,
+    BLOCK_M: tl.constexpr = 32,
+    BLOCK_N: tl.constexpr = 128,
+):
+    pid_m = tl.cast(tl.program_id(axis=0), tl.int64)
+    pid_n = tl.cast(tl.program_id(axis=1), tl.int64)
+    off_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    off_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    mask_m = off_m < M
+    mask_n = off_n < N
+    mask = mask_m[:, None] & mask_n[None, :]
+
+    x = tl.load(X + off_m[:, None] * stride_xm + off_n[None, :] * stride_xn, mask=mask, other=0.0).to(tl.float32)
+    _absmax = tl.maximum(tl.max(tl.abs(x)), eps)
+    x_s = _absmax / fp8_max
+    s_inv = 1.0 / x_s
+    y_q = tl.clamp(x * s_inv, fp8_min, fp8_max).to(Y.dtype.element_ty)
+
+    tl.store(Y + off_m[:, None] * stride_ym + off_n[None, :] * stride_yn, y_q, mask=mask)
+    tl.store(S + pid_m * stride_sm + pid_n * stride_sn, x_s)
+
+def _ceil_div(x, y):
+    return (x + y - 1) // y
+
+def _blockwise_cast_to_fp8(x: torch.Tensor, block_size=None):
+    BLOCK_M, BLOCK_N = 128, 128
+    if block_size:
+        BLOCK_M, BLOCK_N = block_size[0], block_size[1]
+    M, N = x.shape
+    y = torch.empty(M, N, device=x.device, dtype=torch.float8_e4m3fn)
+    s = torch.empty(_ceil_div(M, BLOCK_M), _ceil_div(N, BLOCK_N), dtype=torch.float32, device=x.device)
+    grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]), triton.cdiv(N, meta["BLOCK_N"]))
+    if x.is_contiguous():
+        kwargs = {"BLOCK_M": BLOCK_M, "BLOCK_N": BLOCK_N, "num_warps": 8, "num_stages": 2}
+    else:
+        kwargs = {"BLOCK_M": BLOCK_M, "BLOCK_N": BLOCK_N, "num_warps": 1, "num_stages": 4}
+    FP8_MAX = torch.finfo(torch.float8_e4m3fn).max
+    FP8_MIN = -FP8_MAX
+    _blockwise_cast_to_fp8_triton[grid](
+        x, y, s, *x.stride(), *y.stride(), *s.stride(), M, N, 1e-10, FP8_MIN, FP8_MAX, **kwargs
+    )
+    return y, s
+
+def flash_quantize_fp8_block(weights, profile):
+    logger.debug("flash_rl quantization is called")
+    for name, tensor in weights:
+        if name in profile:
+            qweight, scale = _blockwise_cast_to_fp8(tensor)
+            del tensor
+            yield (name, qweight)
+            # Use name+'_scale' to align with existing fp8 handlers
+            yield (name + '_scale', scale)
+        else:
+            yield (name, tensor)
+
 quant_fn_map = {
     'int8': flash_quantize,
     'int8_fast': flash_quantize,
@@ -131,6 +203,7 @@ quant_fn_map = {
     'fp8_vllm_fast': flash_noquantize,
     'fp8_tensor': flash_quantize_fp8_tensor,
     'fp8_channel': flash_quantize_fp8_channel,
+    'fp8_block': flash_quantize_fp8_block,
 }
 
 def get_quantize_fn(name):

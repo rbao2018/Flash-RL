@@ -5,6 +5,7 @@ import vllm
 import torch 
 import types
 import logging
+import re
 from packaging.version import parse
 
 from torch import nn
@@ -538,6 +539,28 @@ def load_flashrl_config(config):
 
     return config_data
 
+class PatternProfile:
+    """A lightweight profile object that supports membership checks via
+    pattern rules. Used by FP8 quantization paths which only check
+    `if name in profile`.
+
+    - allow: list[str] regex patterns; default ['.*'] (allow all)
+    - deny: list[str] regex patterns; default []
+    deny has higher priority than allow.
+    """
+    def __init__(self, allow=None, deny=None):
+        self.allow_patterns = [re.compile(p) for p in (allow or ['.*'])]
+        self.deny_patterns = [re.compile(p) for p in (deny or [])]
+
+    def __contains__(self, name: str) -> bool:
+        for pat in self.deny_patterns:
+            if pat.search(name):
+                return False
+        for pat in self.allow_patterns:
+            if pat.search(name):
+                return True
+        return False
+
 def patch_vllm_llm():
     try:
         if not hasattr(vllm.LLM, 'beforeflashrl__init__'):
@@ -605,7 +628,14 @@ def patch_vllm_llm():
                         if config_data.get('fn', 'int8') in ['fp8_vllm', 'fp8', 'fp8_fast', 'fp8_vllm_fast']:
                             if 'profile' in config_data:
                                 logger.warning(f"flash_rl fp8_vllm profile is not needed, but set as {config_data['profile']}")
+                            # vLLM-native fp8 路径，不在 FlashRL 侧做筛选
                             self.flash_rl_profile = None
+                        elif config_data.get('fn', 'int8') in ['fp8_tensor', 'fp8_channel', 'fp8_block']:
+                            # FP8 由 FlashRL 执行，使用 allow/deny 规则生成 PatternProfile
+                            allow = config_data.get('fp8_allow', ['.*'])
+                            deny = config_data.get('fp8_deny', [])
+                            logger.debug(f"flash_rl fp8 pattern profile allow: {allow}, deny: {deny}")
+                            self.flash_rl_profile = PatternProfile(allow=allow, deny=deny)
                         else:
                             quant_profile = config_data.get('profile', os.path.join(model, 'profile.pt'))
                             logger.debug(f"Loading flash_rl profile from: {quant_profile}")
