@@ -1,12 +1,13 @@
-import logging
 import os
+import gc
+import time
 import vllm
 import torch 
-from torch import nn
 import types
-import gc
+import logging
 from packaging.version import parse
 
+from torch import nn
 from .flash_quantization import get_quantize_fn
 
 # Set up logger
@@ -35,56 +36,6 @@ recorded_loader_keys = [
     'input_dim',
     '_assert_and_load',
 ]
-
-# fine-grained process weights after loading implementation where we skip operations for certain modules
-def process_weights_after_loading_skippable(model: nn.Module, model_config,
-                                  target_device: torch.device) -> None:
-    from vllm.attention import Attention
-    from vllm.model_executor.layers.linear import QKVCrossParallelLinear
-    from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
-    from vllm.model_executor.model_loader.utils import device_loading_context
-    from vllm.model_executor.layers.quantization.compressed_tensors.compressed_tensors import CompressedTensorsLinearMethod, CompressedTensorsW8A8Int8
-    from vllm.model_executor.layers.quantization.kernels.scaled_mm.cutlass import CutlassScaledMMLinearKernel
-        
-    for _, module in model.named_modules():
-        if isinstance(module, QKVCrossParallelLinear):
-            # NOTE(Isotr0py): special case for cross QKV layer because
-            # q and kv proj aren't registered as submodules intentionally
-            module.process_weights_after_loading()
-            continue
-        quant_method = getattr(module, "quant_method", None)
-        quant_method = getattr(module, "quant_method", None)
-
-        # hack for skpping postprocess for default cutlass kernel
-        scheme = getattr(module, "scheme", None)
-        is_cutlass = isinstance(quant_method, CompressedTensorsLinearMethod) and isinstance(scheme, CompressedTensorsW8A8Int8) and isinstance(scheme.kernel, CutlassScaledMMLinearKernel)
-        can_skip_postprocess = False
-        if is_cutlass:
-            assert isinstance(scheme, CompressedTensorsW8A8Int8) 
-            kernel = scheme.kernel
-            can_skip_postprocess = kernel.config.is_channelwise and not kernel.config.is_static_input_scheme and kernel.config.input_symmetric
-
-        if can_skip_postprocess:
-            continue
-
-        if isinstance(quant_method, QuantizeMethodBase):
-            # When quant methods need to process weights after loading
-            # (for repacking, quantizing, etc), they expect parameters
-            # to be on the global target device. This scope is for the
-            # case where cpu offloading is used, where we will move the
-            # parameters onto device for processing and back off after.
-            with device_loading_context(module, target_device):
-                quant_method.process_weights_after_loading(module)
-
-    # Currently only used by MLA.
-    # NOTE: This intentionally happens after other modules so we can easily
-    # decompress the weights for MLA.
-    for _, module in model.named_modules():
-        if isinstance(module, Attention) and \
-            hasattr(module, "process_weights_after_loading"):
-            # TODO(lucas): see if there is a way to unify the signatures
-            # of process_weights_after_loading
-            module.process_weights_after_loading(model_config.dtype)
 
 def hacked_process_weights_after_loading(
     original_process_weights_after_loading,
@@ -127,7 +78,7 @@ def hacked_process_weights_after_loading(
                     recorded_loader[k][name] = attr
 
     if hasattr(model, 'flashrl_quant_fn') and 'fast' in model.flashrl_quant_fn and hacked_data_dict is not None:
-        logger.debug('flash_rl fast process_weight_after_loading called')
+        logger.debug('flash_rl-fast process_weight_after_loading called')
         from vllm.model_executor.layers.linear import QKVCrossParallelLinear
         from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
         from vllm.model_executor.layers.quantization.base_config import QuantizeMethodBase
@@ -201,7 +152,7 @@ def hacked_process_weights_after_loading(
         del skipped_params
         
     else:
-        logger.debug("flash_rl slow process_weight_after_loadding called")
+        logger.debug("flash_rl process_weight_after_loading called")
         original_process_weights_after_loading(model, model_config, target_device)
 
         if hacked_data_dict is not None:
@@ -251,11 +202,7 @@ def patch_vllm_process_weights_after_loading():
                 
                 if not hasattr(utils, 'beforeflashrl_process_weights_after_loading'):
                     
-                    # use the skippable version for 0.9.1 and 0.9.2
-                    if parse(vllm.__version__) in [parse("0.9.1"), parse("0.9.2")]:
-                        original_process_weights_after_loading = process_weights_after_loading_skippable
-                    else:
-                        original_process_weights_after_loading = utils.process_weights_after_loading
+                    original_process_weights_after_loading = utils.process_weights_after_loading
 
                     utils.beforeflashrl_process_weights_after_loading = original_process_weights_after_loading
 
@@ -704,6 +651,7 @@ def patch_vllm_llm():
                     def hacked_load_weights(
                         weights,
                     ):
+                        start_time = time.time()
                         setattr(model, 'hacked_not_need_process_weights_after_loading', False)
                         
                         if not hasattr(model, "hacked_original_weights_rebuild_keys"):
@@ -735,9 +683,17 @@ def patch_vllm_llm():
 
                         del existing_params
                         
+                        end_time = time.time()
+                        logger.debug(f"flash_rl load_weights preparation took {end_time - start_time:.2f} seconds")
+                        start_time = end_time
+                        
                         updated_params = original_load_weights(
                             flash_quantize_fn(weights, self.flash_rl_profile)
                         )
+                        
+                        end_time = time.time()
+                        logger.debug(f"flash_rl original_load_weights took {end_time - start_time:.2f} seconds")
+                        start_time = end_time
                         
                         del weights
                         if hasattr(model, 'hacked_model_config') and hasattr(model, 'hacked_target_device'):
@@ -776,7 +732,9 @@ def patch_vllm_llm():
                                         assert hasattr(module, f'hacked_{attr}'), f"module {module} does not have attribute hacked_{attr}"
                                         setattr(module, attr, getattr(module, f'hacked_{attr}'))
                                         delattr(module, f'hacked_{attr}')
-                                        
+                        
+                        end_time = time.time()
+                        logger.debug(f"flash_rl load_weights process_weights_after_loading took {end_time - start_time:.2f} seconds")             
                         return updated_params
                     
                     model.load_weights = hacked_load_weights
